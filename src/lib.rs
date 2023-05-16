@@ -65,6 +65,17 @@ pub fn subst(e: &Expr, x: &str, e_x: &Expr, gen_cnt: u32) -> (Expr, u32) {
     }
 }
 
+pub fn beta_red(e: &Expr, gen_cnt: u32) -> (Expr, u32) {
+    match e {
+        // (\x.e0) e1 -> e0{e1/x}
+        Expr::App(e0, e1) => match e0.as_ref() {
+            Expr::Lamb(x, e0) => subst(e0, x, e1, gen_cnt),
+            _ => panic!("e0 is not a lambda expression"),
+        },
+        _ => (e.clone(), gen_cnt),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -169,6 +180,32 @@ mod tests {
         let (e, _) = subst(&e, "x", &y, 0);
         assert!(
             matches!(e, Expr::Lamb(y, e) if y == "$0" && matches!(&*e, Expr::App(e_zx, e_y) if matches!(&**e_zx, Expr::App(e_z, e_x) if matches!(&**e_z, Expr::Var(z) if z == "z") && matches!(&**e_x, Expr::Var(x) if x == "y")) && matches!(&**e_y, Expr::Var(y) if y == "$0")))
+        );
+    }
+
+    #[test]
+    fn beta_red_is_correct() {
+        let x = Expr::Var(String::from("x"));
+        let y = Expr::Var(String::from("y"));
+        let z = Expr::Var(String::from("z"));
+        // e = \z.\x.\y.((z x) y)
+        let e = Expr::Lamb(
+            String::from("z"),
+            Box::new(Expr::Lamb(
+                String::from("x"),
+                Box::new(Expr::Lamb(
+                    String::from("y"),
+                    Box::new(Expr::App(
+                        Box::new(Expr::App(Box::new(z.clone()), Box::new(x.clone()))),
+                        Box::new(y.clone()),
+                    )),
+                )),
+            )),
+        );
+        let (e, _) = beta_red(&Expr::App(Box::new(e), Box::new(x)), 0);
+        // (\z.\x.\y.((z x) y)) x -> \$0.\y.((x $0) y)))
+        assert!(
+            matches!(e, Expr::Lamb(x, e) if x == "$0" && matches!(&*e, Expr::Lamb(y, e) if y == "y" && matches!(&**e, Expr::App(e_zx, e_y) if matches!(&**e_zx, Expr::App(e_z, e_x) if matches!(&**e_z, Expr::Var(z) if z == "x") && matches!(&**e_x, Expr::Var(x) if x == "$0")) && matches!(&**e_y, Expr::Var(y) if y == "y"))))
         );
     }
 }
