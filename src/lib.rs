@@ -49,6 +49,24 @@ mod tests {
     }
 
     #[test]
+    fn free_var_lamb() {
+        let lamb = Expr::Lamb(String::from("x"), Box::new(Expr::Var(String::from("y"))));
+        assert!(free_var(&lamb).contains("y"));
+    }
+
+    #[test]
+    fn free_var_app() {
+        let e = Expr::App(
+            Box::new(Expr::Lamb(
+                String::from("x"),
+                Box::new(Expr::Var(String::from("x"))),
+            )),
+            Box::new(Expr::Var(String::from("x"))),
+        );
+        assert!(free_var(&e).contains("x"));
+    }
+
+    #[test]
     fn closed_x_is_false() {
         let x = Expr::Var(String::from("x"));
         assert!(!closed(&x));
