@@ -1,3 +1,11 @@
+use nom::{
+    branch::alt,
+    bytes::complete::tag,
+    character::complete::{alphanumeric1, multispace0},
+    combinator::map,
+    sequence::{delimited, preceded, tuple},
+    IResult,
+};
 use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
@@ -70,9 +78,58 @@ pub fn beta_red(e: &Expr, gen_cnt: u32) -> (Expr, u32) {
         // (\x.e0) e1 -> e0{e1/x}
         Expr::App(e0, e1) => match e0.as_ref() {
             Expr::Lamb(x, e0) => subst(e0, x, e1, gen_cnt),
-            _ => panic!("e0 is not a lambda expression"),
+            e0 => {
+                let (e0, gen_cnt) = beta_red(&e0, gen_cnt);
+                beta_red(&Expr::App(Box::new(e0), e1.clone()), gen_cnt)
+            }
         },
         _ => (e.clone(), gen_cnt),
+    }
+}
+
+fn parse_var(input: &str) -> IResult<&str, Expr> {
+    map(alphanumeric1, |x| Expr::Var(String::from(x)))(input)
+}
+
+fn parse_lamb(input: &str) -> IResult<&str, Expr> {
+    map(
+        tuple((
+            preceded(tag("\\"), alphanumeric1),
+            preceded(multispace0, preceded(tag("."), parse_expr)),
+        )),
+        |(x, e)| Expr::Lamb(String::from(x), Box::new(e)),
+    )(input)
+}
+
+fn parse_app(input: &str) -> IResult<&str, Expr> {
+    map(
+        tuple((
+            alt((parse_var, parse_lamb, parse_parens)),
+            preceded(multispace0, parse_expr),
+        )),
+        |(e0, e1)| Expr::App(Box::new(e0), Box::new(e1)),
+    )(input)
+}
+
+fn parse_parens(input: &str) -> IResult<&str, Expr> {
+    delimited(tag("("), parse_expr, preceded(multispace0, tag(")")))(input)
+}
+
+fn parse_expr(input: &str) -> IResult<&str, Expr> {
+    preceded(
+        multispace0,
+        alt((parse_lamb, parse_app, parse_var, parse_parens)),
+    )(input)
+}
+
+pub fn parse(input: &str) -> Expr {
+    match parse_expr(input.trim_end()) {
+        Ok((residual, expr)) if residual.is_empty() => expr,
+        Ok((residual, expr)) => panic!(
+            "Error parsing input:\nPartial result:{:?}\nResidual: {:?}",
+            expr, residual
+        ),
+        Err(e) => panic!("Error parsing input: {:?}", e),
     }
 }
 
@@ -141,7 +198,7 @@ mod tests {
         );
         let (e, _) = subst(&e, "x", &y, 0);
         assert!(
-            matches!(e, Expr::App(e0, e1) if matches!(&*e0, Expr::Lamb(x, e) if x == "x" && matches!(&**e, Expr::Var(x) if x == "x")) && matches!(&*e1, Expr::Var(x) if x == "y"))
+            matches!(e, Expr::App(e0, e1) if matches!(e0.as_ref(), Expr::Lamb(x, e) if x == "x" && matches!(e.as_ref(), Expr::Var(x) if x == "x")) && matches!(e1.as_ref(), Expr::Var(x) if x == "y"))
         );
     }
 
@@ -160,7 +217,7 @@ mod tests {
         );
         let (e, _) = subst(&e, "x", &z, 0);
         assert!(
-            matches!(e, Expr::Lamb(y, e) if y == "y" && matches!(&*e, Expr::App(e_zx, e_y) if matches!(&**e_zx, Expr::App(e_z, e_x) if matches!(&**e_z, Expr::Var(z) if z == "z") && matches!(&**e_x, Expr::Var(x) if x == "z")) && matches!(&**e_y, Expr::Var(y) if y == "y")))
+            matches!(e, Expr::Lamb(y, e) if y == "y" && matches!(e.as_ref(), Expr::App(e_zx, e_y) if matches!(e_zx.as_ref(), Expr::App(e_z, e_x) if matches!(e_z.as_ref(), Expr::Var(z) if z == "z") && matches!(e_x.as_ref(), Expr::Var(x) if x == "z")) && matches!(e_y.as_ref(), Expr::Var(y) if y == "y")))
         );
     }
 
@@ -179,12 +236,12 @@ mod tests {
         );
         let (e, _) = subst(&e, "x", &y, 0);
         assert!(
-            matches!(e, Expr::Lamb(y, e) if y == "$0" && matches!(&*e, Expr::App(e_zx, e_y) if matches!(&**e_zx, Expr::App(e_z, e_x) if matches!(&**e_z, Expr::Var(z) if z == "z") && matches!(&**e_x, Expr::Var(x) if x == "y")) && matches!(&**e_y, Expr::Var(y) if y == "$0")))
+            matches!(e, Expr::Lamb(y, e) if y == "$0" && matches!(e.as_ref(), Expr::App(e_zx, e_y) if matches!(e_zx.as_ref(), Expr::App(e_z, e_x) if matches!(e_z.as_ref(), Expr::Var(z) if z == "z") && matches!(e_x.as_ref(), Expr::Var(x) if x == "y")) && matches!(e_y.as_ref(), Expr::Var(y) if y == "$0")))
         );
     }
 
     #[test]
-    fn beta_red_is_correct() {
+    fn beta_red_is_correct_1() {
         let x = Expr::Var(String::from("x"));
         let y = Expr::Var(String::from("y"));
         let z = Expr::Var(String::from("z"));
@@ -205,7 +262,55 @@ mod tests {
         let (e, _) = beta_red(&Expr::App(Box::new(e), Box::new(x)), 0);
         // (\z.\x.\y.((z x) y)) x -> \$0.\y.((x $0) y)))
         assert!(
-            matches!(e, Expr::Lamb(x, e) if x == "$0" && matches!(&*e, Expr::Lamb(y, e) if y == "y" && matches!(&**e, Expr::App(e_zx, e_y) if matches!(&**e_zx, Expr::App(e_z, e_x) if matches!(&**e_z, Expr::Var(z) if z == "x") && matches!(&**e_x, Expr::Var(x) if x == "$0")) && matches!(&**e_y, Expr::Var(y) if y == "y"))))
+            matches!(e, Expr::Lamb(x, e) if x == "$0" && matches!(e.as_ref(), Expr::Lamb(y, e) if y == "y" && matches!(e.as_ref(), Expr::App(e_zx, e_y) if matches!(e_zx.as_ref(), Expr::App(e_z, e_x) if matches!(e_z.as_ref(), Expr::Var(z) if z == "x") && matches!(e_x.as_ref(), Expr::Var(x) if x == "$0")) && matches!(e_y.as_ref(), Expr::Var(y) if y == "y"))))
+        );
+    }
+
+    #[test]
+    fn beta_red_is_correct_2() {
+        let x = Expr::Var(String::from("x"));
+        let y = Expr::Var(String::from("y"));
+        let z = Expr::Var(String::from("z"));
+        // e = ((\x.x)(\y.y))z
+        let e = Expr::App(
+            Box::new(Expr::App(
+                Box::new(Expr::Lamb(String::from("x"), Box::new(x.clone()))),
+                Box::new(Expr::Lamb(String::from("y"), Box::new(y.clone()))),
+            )),
+            Box::new(z.clone()),
+        );
+        let (e, _) = beta_red(&e, 0);
+        println!("{:?}", e);
+        assert!(matches!(e, Expr::Var(z) if z == "z"));
+    }
+
+    #[test]
+    fn parse_var_is_correct() {
+        let e = parse_var("x1");
+        assert!(matches!(e, Ok(("", Expr::Var(x))) if x == "x1"));
+    }
+
+    #[test]
+    fn parse_lamb_is_correct() {
+        let e = parse_lamb("\\x1.x2");
+        assert!(
+            matches!(e, Ok(("", Expr::Lamb(x, e_x))) if x == "x1" && matches!(e_x.as_ref(), Expr::Var(x) if x == "x2"))
+        );
+    }
+
+    #[test]
+    fn parse_app_is_correct() {
+        let e = parse_app("e0 e1");
+        assert!(
+            matches!(e, Ok(("", Expr::App(e0, e1))) if matches!(e0.as_ref(), Expr::Var(e0) if e0 == "e0") && matches!(e1.as_ref(), Expr::Var(e1) if e1 == "e1"))
+        );
+    }
+
+    #[test]
+    fn parse_expr_is_correct() {
+        let e = parse_expr("(\\f. (\\x.f(x(x))) (\\x.f(x x)))");
+        assert!(
+            matches!(e, Ok(("", Expr::Lamb(f, e_f))) if f == "f" && matches!(e_f.as_ref(), Expr::App(e0, e1) if matches!(e0.as_ref(), Expr::Lamb(x, e_x) if x == "x" && matches!(e_x.as_ref(), Expr::App(e0, e1) if matches!(e0.as_ref(), Expr::Var(f) if f == "f") && matches!(e1.as_ref(), Expr::App(e0, e1) if matches!(e0.as_ref(), Expr::Var(f) if f == "x") && matches!(e1.as_ref(), Expr::Var(x) if x == "x")))) && matches!(e1.as_ref(), Expr::Lamb(x, e_x) if x == "x" && matches!(e_x.as_ref(), Expr::App(e0, e1) if matches!(e0.as_ref(), Expr::Var(f) if f == "f") && matches!(e1.as_ref(), Expr::App(e0, e1) if matches!(e0.as_ref(), Expr::Var(f) if f == "x") && matches!(e1.as_ref(), Expr::Var(x) if x == "x"))))))
         );
     }
 }

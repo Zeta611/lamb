@@ -1,12 +1,9 @@
 use lamb::*;
 
 fn main() {
-    let x = Expr::Var(String::from("x"));
-    let e1 = Expr::Lamb(String::from("x"), Box::new(x));
-    // copy e1 into e2
-    let e2 = e1.clone();
-    let e = Expr::App(Box::new(e1), Box::new(e2));
+    let e = parse("((\\x.x) (\\y.y)) z");
     println!("e = {:?}", e);
     println!("FV(e) = {:?}", free_var(&e));
     println!("closed(e) = {:?}", closed(&e));
+    println!("eval(e) = {:?}", beta_red(&e, 0));
 }
