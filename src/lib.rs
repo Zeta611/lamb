@@ -41,49 +41,49 @@ pub fn closed(e: &Expr) -> bool {
 }
 
 /// Safely substitutes x with e_x in e.
-pub fn subst(e: &Expr, x: &str, e_x: &Expr, gen_cnt: u32) -> (Expr, u32) {
+pub fn subst(e: Expr, x: &str, e_x: Expr, gen_cnt: u32) -> (Expr, u32) {
     match e {
         // x{e_x/x} = e_x
-        Expr::Var(y) if y == x => (e_x.clone(), gen_cnt),
+        Expr::Var(y) if y == x => (e_x, gen_cnt),
         // y{e_x/x} = e_x where y != x
-        Expr::Var(y) => (Expr::Var(y.clone()), gen_cnt),
+        Expr::Var(y) => (Expr::Var(y), gen_cnt),
 
         // (\x.e0){e_x/x} = \x.e0
-        Expr::Lamb(y, _) if y == x => (e.clone(), gen_cnt),
+        Expr::Lamb(ref y, _) if y == x => (e, gen_cnt),
         // (\y.e0){e_x/x} = \y.(e0{e_x/x}) where y != x & y not in FV(e_x)
-        Expr::Lamb(y, e0) if y != x && !free_var(e_x).contains(y.as_str()) => {
-            let (e0_subst, gen_cnt) = subst(e0, x, e_x, gen_cnt);
-            (Expr::Lamb(y.clone(), Box::new(e0_subst)), gen_cnt)
+        Expr::Lamb(y, e0) if y != x && !free_var(&e_x).contains(y.as_str()) => {
+            let (e0_subst, gen_cnt) = subst(*e0, x, e_x, gen_cnt);
+            (Expr::Lamb(y, Box::new(e0_subst)), gen_cnt)
         }
         // (\y.e0){e_x/x} = \z.(e0{z/y}{e_x/x}) where y != x /\ y in FV(e_x)
         Expr::Lamb(y, e0) => {
             let z = format!("${}", gen_cnt);
             let gen_cnt = gen_cnt + 1;
-            let (e0, gen_cnt) = subst(e0, y, &Expr::Var(z.clone()), gen_cnt);
-            let (e0, gen_cnt) = subst(&e0, x, e_x, gen_cnt);
+            let (e0, gen_cnt) = subst(*e0, y.as_str(), Expr::Var(z.clone()), gen_cnt);
+            let (e0, gen_cnt) = subst(e0, x, e_x, gen_cnt);
             (Expr::Lamb(z, Box::new(e0)), gen_cnt)
         }
 
         // (e0 e1){e_x/x} = (e0{e_x/x} e1{e_x/x})
         Expr::App(e0, e1) => {
-            let (e0, gen_cnt) = subst(e0, x, e_x, gen_cnt);
-            let (e1, gen_cnt) = subst(e1, x, e_x, gen_cnt);
+            let (e0, gen_cnt) = subst(*e0, x, e_x.clone(), gen_cnt);
+            let (e1, gen_cnt) = subst(*e1, x, e_x, gen_cnt);
             (Expr::App(Box::new(e0), Box::new(e1)), gen_cnt)
         }
     }
 }
 
-pub fn beta_red(e: &Expr, gen_cnt: u32) -> (Expr, u32) {
+pub fn beta_red(e: Expr, gen_cnt: u32) -> (Expr, u32) {
     match e {
         // (\x.e0) e1 -> e0{e1/x}
-        Expr::App(e0, e1) => match e0.as_ref() {
-            Expr::Lamb(x, e0) => subst(e0, x, e1, gen_cnt),
+        Expr::App(e0, e1) => match *e0 {
+            Expr::Lamb(x, e0) => subst(*e0, x.as_str(), *e1, gen_cnt),
             e0 => {
-                let (e0, gen_cnt) = beta_red(&e0, gen_cnt);
-                beta_red(&Expr::App(Box::new(e0), e1.clone()), gen_cnt)
+                let (e0, gen_cnt) = beta_red(e0, gen_cnt);
+                beta_red(Expr::App(Box::new(e0), e1), gen_cnt)
             }
         },
-        _ => (e.clone(), gen_cnt),
+        _ => (e, gen_cnt),
     }
 }
 
@@ -183,7 +183,7 @@ mod tests {
     fn subst_x_for_y_in_x_is_x() {
         let x = Expr::Var(String::from("x"));
         let y = Expr::Var(String::from("y"));
-        let (e, _) = subst(&x, "x", &y, 0);
+        let (e, _) = subst(x, "x", y, 0);
         assert!(matches!(e, Expr::Var(x) if x == "y"));
     }
 
@@ -196,7 +196,7 @@ mod tests {
             Box::new(Expr::Lamb(String::from("x"), Box::new(x.clone()))),
             Box::new(x.clone()),
         );
-        let (e, _) = subst(&e, "x", &y, 0);
+        let (e, _) = subst(e, "x", y, 0);
         assert!(
             matches!(e, Expr::App(e0, e1) if matches!(e0.as_ref(), Expr::Lamb(x, e) if x == "x" && matches!(e.as_ref(), Expr::Var(x) if x == "x")) && matches!(e1.as_ref(), Expr::Var(x) if x == "y"))
         );
@@ -211,11 +211,11 @@ mod tests {
         let e = Expr::Lamb(
             String::from("y"),
             Box::new(Expr::App(
-                Box::new(Expr::App(Box::new(z.clone()), Box::new(x.clone()))),
-                Box::new(y.clone()),
+                Box::new(Expr::App(Box::new(z.clone()), Box::new(x))),
+                Box::new(y),
             )),
         );
-        let (e, _) = subst(&e, "x", &z, 0);
+        let (e, _) = subst(e, "x", z, 0);
         assert!(
             matches!(e, Expr::Lamb(y, e) if y == "y" && matches!(e.as_ref(), Expr::App(e_zx, e_y) if matches!(e_zx.as_ref(), Expr::App(e_z, e_x) if matches!(e_z.as_ref(), Expr::Var(z) if z == "z") && matches!(e_x.as_ref(), Expr::Var(x) if x == "z")) && matches!(e_y.as_ref(), Expr::Var(y) if y == "y")))
         );
@@ -230,11 +230,11 @@ mod tests {
         let e = Expr::Lamb(
             String::from("y"),
             Box::new(Expr::App(
-                Box::new(Expr::App(Box::new(z.clone()), Box::new(x.clone()))),
+                Box::new(Expr::App(Box::new(z), Box::new(x))),
                 Box::new(y.clone()),
             )),
         );
-        let (e, _) = subst(&e, "x", &y, 0);
+        let (e, _) = subst(e, "x", y, 0);
         assert!(
             matches!(e, Expr::Lamb(y, e) if y == "$0" && matches!(e.as_ref(), Expr::App(e_zx, e_y) if matches!(e_zx.as_ref(), Expr::App(e_z, e_x) if matches!(e_z.as_ref(), Expr::Var(z) if z == "z") && matches!(e_x.as_ref(), Expr::Var(x) if x == "y")) && matches!(e_y.as_ref(), Expr::Var(y) if y == "$0")))
         );
@@ -253,13 +253,13 @@ mod tests {
                 Box::new(Expr::Lamb(
                     String::from("y"),
                     Box::new(Expr::App(
-                        Box::new(Expr::App(Box::new(z.clone()), Box::new(x.clone()))),
-                        Box::new(y.clone()),
+                        Box::new(Expr::App(Box::new(z), Box::new(x.clone()))),
+                        Box::new(y),
                     )),
                 )),
             )),
         );
-        let (e, _) = beta_red(&Expr::App(Box::new(e), Box::new(x)), 0);
+        let (e, _) = beta_red(Expr::App(Box::new(e), Box::new(x)), 0);
         // (\z.\x.\y.((z x) y)) x -> \$0.\y.((x $0) y)))
         assert!(
             matches!(e, Expr::Lamb(x, e) if x == "$0" && matches!(e.as_ref(), Expr::Lamb(y, e) if y == "y" && matches!(e.as_ref(), Expr::App(e_zx, e_y) if matches!(e_zx.as_ref(), Expr::App(e_z, e_x) if matches!(e_z.as_ref(), Expr::Var(z) if z == "x") && matches!(e_x.as_ref(), Expr::Var(x) if x == "$0")) && matches!(e_y.as_ref(), Expr::Var(y) if y == "y"))))
@@ -274,12 +274,12 @@ mod tests {
         // e = ((\x.x)(\y.y))z
         let e = Expr::App(
             Box::new(Expr::App(
-                Box::new(Expr::Lamb(String::from("x"), Box::new(x.clone()))),
-                Box::new(Expr::Lamb(String::from("y"), Box::new(y.clone()))),
+                Box::new(Expr::Lamb(String::from("x"), Box::new(x))),
+                Box::new(Expr::Lamb(String::from("y"), Box::new(y))),
             )),
-            Box::new(z.clone()),
+            Box::new(z),
         );
-        let (e, _) = beta_red(&e, 0);
+        let (e, _) = beta_red(e, 0);
         println!("{:?}", e);
         assert!(matches!(e, Expr::Var(z) if z == "z"));
     }

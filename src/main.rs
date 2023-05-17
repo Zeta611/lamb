@@ -5,5 +5,5 @@ fn main() {
     println!("e = {:?}", e);
     println!("FV(e) = {:?}", free_var(&e));
     println!("closed(e) = {:?}", closed(&e));
-    println!("eval(e) = {:?}", beta_red(&e, 0));
+    println!("eval(e) = {:?}", beta_red(e, 0));
 }
