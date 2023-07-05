@@ -1,7 +1,7 @@
 use lamb::*;
 
 fn main() {
-    let e = parse("((\\x.x) (\\y.y)) z");
+    let e = parse("(\\x.x) (\\y.y) (\\x.\\y.x) a b");
     println!("e = {:?}", e);
     println!("FV(e) = {:?}", free_var(&e));
     println!("closed(e) = {:?}", closed(&e));

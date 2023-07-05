@@ -3,6 +3,7 @@ use nom::{
     bytes::complete::tag,
     character::complete::{alphanumeric1, multispace0},
     combinator::map,
+    multi::many0,
     sequence::{delimited, preceded, tuple},
     IResult,
 };
@@ -101,25 +102,34 @@ fn parse_lamb(input: &str) -> IResult<&str, Expr> {
     )(input)
 }
 
-fn parse_app(input: &str) -> IResult<&str, Expr> {
-    map(
-        tuple((
-            alt((parse_var, parse_lamb, parse_parens)),
-            preceded(multispace0, parse_expr),
-        )),
-        |(e0, e1)| Expr::App(Box::new(e0), Box::new(e1)),
-    )(input)
-}
-
 fn parse_parens(input: &str) -> IResult<&str, Expr> {
     delimited(tag("("), parse_expr, preceded(multispace0, tag(")")))(input)
 }
 
 fn parse_expr(input: &str) -> IResult<&str, Expr> {
-    preceded(
+    match many0(preceded(
         multispace0,
-        alt((parse_lamb, parse_app, parse_var, parse_parens)),
-    )(input)
+        alt((parse_lamb, parse_var, parse_parens)),
+    ))(input)
+    {
+        Ok((residual, exprs)) => {
+            match &exprs[..] {
+                [] => Err(nom::Err::Error(nom::error::Error::new(
+                    residual,
+                    nom::error::ErrorKind::Fail,
+                ))),
+
+                // Fold exprs into nested applications
+                [hd, tl @ ..] => Ok((
+                    residual,
+                    tl.iter().fold(hd.to_owned(), |acc, e| {
+                        Expr::App(Box::new(acc), Box::new(e.to_owned()))
+                    }),
+                )),
+            }
+        }
+        Err(e) => Err(e),
+    }
 }
 
 pub fn parse(input: &str) -> Expr {
@@ -299,18 +309,37 @@ mod tests {
     }
 
     #[test]
-    fn parse_app_is_correct() {
-        let e = parse_app("e0 e1");
-        assert!(
-            matches!(e, Ok(("", Expr::App(e0, e1))) if matches!(e0.as_ref(), Expr::Var(e0) if e0 == "e0") && matches!(e1.as_ref(), Expr::Var(e1) if e1 == "e1"))
-        );
-    }
-
-    #[test]
     fn parse_expr_is_correct() {
         let e = parse_expr("(\\f. (\\x.f(x(x))) (\\x.f(x x)))");
         assert!(
             matches!(e, Ok(("", Expr::Lamb(f, e_f))) if f == "f" && matches!(e_f.as_ref(), Expr::App(e0, e1) if matches!(e0.as_ref(), Expr::Lamb(x, e_x) if x == "x" && matches!(e_x.as_ref(), Expr::App(e0, e1) if matches!(e0.as_ref(), Expr::Var(f) if f == "f") && matches!(e1.as_ref(), Expr::App(e0, e1) if matches!(e0.as_ref(), Expr::Var(f) if f == "x") && matches!(e1.as_ref(), Expr::Var(x) if x == "x")))) && matches!(e1.as_ref(), Expr::Lamb(x, e_x) if x == "x" && matches!(e_x.as_ref(), Expr::App(e0, e1) if matches!(e0.as_ref(), Expr::Var(f) if f == "f") && matches!(e1.as_ref(), Expr::App(e0, e1) if matches!(e0.as_ref(), Expr::Var(f) if f == "x") && matches!(e1.as_ref(), Expr::Var(x) if x == "x"))))))
         );
+    }
+
+    #[test]
+    fn parse_app_is_left_assoc_2() {
+        let e = parse_expr("a b");
+        assert!(matches!(
+            e,
+            Ok(("", Expr::App(a, b))) if matches!(a.as_ref(), Expr::Var(a) if a == "a") && matches!(b.as_ref(), Expr::Var(b) if b == "b")
+        ))
+    }
+
+    #[test]
+    fn parse_app_is_left_assoc_3() {
+        let e = parse_expr("a b c");
+        assert!(matches!(
+            e,
+            Ok(("", Expr::App(e0, e1))) if matches!(e1.as_ref(), Expr::Var(c) if c == "c") && matches!(e0.as_ref(), Expr::App(e00, e01) if matches!(e00.as_ref(), Expr::Var(a) if a == "a") && matches!(e01.as_ref(), Expr::Var(b) if b == "b"))
+        ))
+    }
+
+    #[test]
+    fn parse_app_is_left_assoc_4() {
+        let e = parse_expr("a b c d");
+        assert!(matches!(
+            e,
+            Ok(("", Expr::App(e0, e1))) if matches!(e1.as_ref(), Expr::Var(d) if d == "d") && matches!(e0.as_ref(), Expr::App(e00, e01) if matches!(e00.as_ref(), Expr::App(e000, e001) if matches!(e000.as_ref(), Expr::Var(a) if a == "a") && matches!(e001.as_ref(), Expr::Var(b) if b == "b")) && matches!(e01.as_ref(), Expr::Var(c) if c == "c"))
+        ))
     }
 }
