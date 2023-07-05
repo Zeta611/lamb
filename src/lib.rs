@@ -207,9 +207,20 @@ mod tests {
             Box::new(x.clone()),
         );
         let (e, _) = subst(e, "x", y, 0);
-        assert!(
-            matches!(e, Expr::App(e0, e1) if matches!(e0.as_ref(), Expr::Lamb(x, e) if x == "x" && matches!(e.as_ref(), Expr::Var(x) if x == "x")) && matches!(e1.as_ref(), Expr::Var(x) if x == "y"))
-        );
+        assert!(matches!(e, Expr::App(_, _)));
+
+        let (e0, e1) = match e {
+            Expr::App(e0, e1) => (e0, e1),
+            _ => panic!("Expected Expr::App"),
+        };
+
+        let (x, e) = match e0.as_ref() {
+            Expr::Lamb(x, e) => (x, e),
+            _ => panic!("Expected Expr::Lamb"),
+        };
+        assert_eq!(x, "x");
+        assert!(matches!(e.as_ref(), Expr::Var(x) if x == "x"));
+        assert!(matches!(e1.as_ref(), Expr::Var(x) if x == "y"));
     }
 
     #[test]
@@ -226,9 +237,26 @@ mod tests {
             )),
         );
         let (e, _) = subst(e, "x", z, 0);
-        assert!(
-            matches!(e, Expr::Lamb(y, e) if y == "y" && matches!(e.as_ref(), Expr::App(e_zx, e_y) if matches!(e_zx.as_ref(), Expr::App(e_z, e_x) if matches!(e_z.as_ref(), Expr::Var(z) if z == "z") && matches!(e_x.as_ref(), Expr::Var(x) if x == "z")) && matches!(e_y.as_ref(), Expr::Var(y) if y == "y")))
-        );
+        assert!(matches!(e, Expr::Lamb(_, _)));
+
+        let (y, e) = match e {
+            Expr::Lamb(y, e) => (y, e),
+            _ => panic!("Expected Expr::Lamb"),
+        };
+        assert_eq!(y, "y");
+
+        let (e_zx, e_y) = match e.as_ref() {
+            Expr::App(e_zx, e_y) => (e_zx, e_y),
+            _ => panic!("Expected Expr::App"),
+        };
+
+        let (e_z, e_x) = match e_zx.as_ref() {
+            Expr::App(e_z, e_x) => (e_z, e_x),
+            _ => panic!("Expected Expr::App"),
+        };
+        assert!(matches!(e_z.as_ref(), Expr::Var(z) if z == "z"));
+        assert!(matches!(e_x.as_ref(), Expr::Var(x) if x == "z"));
+        assert!(matches!(e_y.as_ref(), Expr::Var(y) if y == "y"));
     }
 
     #[test]
@@ -245,9 +273,26 @@ mod tests {
             )),
         );
         let (e, _) = subst(e, "x", y, 0);
-        assert!(
-            matches!(e, Expr::Lamb(y, e) if y == "$0" && matches!(e.as_ref(), Expr::App(e_zx, e_y) if matches!(e_zx.as_ref(), Expr::App(e_z, e_x) if matches!(e_z.as_ref(), Expr::Var(z) if z == "z") && matches!(e_x.as_ref(), Expr::Var(x) if x == "y")) && matches!(e_y.as_ref(), Expr::Var(y) if y == "$0")))
-        );
+        assert!(matches!(e, Expr::Lamb(_, _)));
+
+        let (y, e) = match e {
+            Expr::Lamb(y, e) => (y, e),
+            _ => panic!("Expected Expr::Lamb"),
+        };
+        assert_eq!(y, "$0");
+
+        let (e_zx, e_y) = match e.as_ref() {
+            Expr::App(e_zx, e_y) => (e_zx, e_y),
+            _ => panic!("Expected Expr::App"),
+        };
+
+        let (e_z, e_x) = match e_zx.as_ref() {
+            Expr::App(e_z, e_x) => (e_z, e_x),
+            _ => panic!("Expected Expr::App"),
+        };
+        assert!(matches!(e_z.as_ref(), Expr::Var(z) if z == "z"));
+        assert!(matches!(e_x.as_ref(), Expr::Var(x) if x == "y"));
+        assert!(matches!(e_y.as_ref(), Expr::Var(y) if y == "$0"));
     }
 
     #[test]
@@ -271,9 +316,32 @@ mod tests {
         );
         let (e, _) = beta_red(Expr::App(Box::new(e), Box::new(x)), 0);
         // (\z.\x.\y.((z x) y)) x -> \$0.\y.((x $0) y)))
-        assert!(
-            matches!(e, Expr::Lamb(x, e) if x == "$0" && matches!(e.as_ref(), Expr::Lamb(y, e) if y == "y" && matches!(e.as_ref(), Expr::App(e_zx, e_y) if matches!(e_zx.as_ref(), Expr::App(e_z, e_x) if matches!(e_z.as_ref(), Expr::Var(z) if z == "x") && matches!(e_x.as_ref(), Expr::Var(x) if x == "$0")) && matches!(e_y.as_ref(), Expr::Var(y) if y == "y"))))
-        );
+        assert!(matches!(e, Expr::Lamb(_, _)));
+
+        let (x, e) = match e {
+            Expr::Lamb(x, e) => (x, e),
+            _ => panic!("Expected Expr::Lamb"),
+        };
+        assert_eq!(x, "$0");
+
+        let (y, e) = match e.as_ref() {
+            Expr::Lamb(y, e) => (y, e),
+            _ => panic!("Expected Expr::Lamb"),
+        };
+        assert_eq!(y, "y");
+
+        let (e_zx, e_y) = match e.as_ref() {
+            Expr::App(e_zx, e_y) => (e_zx, e_y),
+            _ => panic!("Expected Expr::App"),
+        };
+
+        let (e_z, e_x) = match e_zx.as_ref() {
+            Expr::App(e_z, e_x) => (e_z, e_x),
+            _ => panic!("Expected Expr::App"),
+        };
+        assert!(matches!(e_z.as_ref(), Expr::Var(z) if z == "x"));
+        assert!(matches!(e_x.as_ref(), Expr::Var(x) if x == "$0"));
+        assert!(matches!(e_y.as_ref(), Expr::Var(y) if y == "y"));
     }
 
     #[test]
@@ -311,9 +379,56 @@ mod tests {
     #[test]
     fn parse_expr_is_correct() {
         let e = parse_expr("(\\f. (\\x.f(x(x))) (\\x.f(x x)))");
-        assert!(
-            matches!(e, Ok(("", Expr::Lamb(f, e_f))) if f == "f" && matches!(e_f.as_ref(), Expr::App(e0, e1) if matches!(e0.as_ref(), Expr::Lamb(x, e_x) if x == "x" && matches!(e_x.as_ref(), Expr::App(e0, e1) if matches!(e0.as_ref(), Expr::Var(f) if f == "f") && matches!(e1.as_ref(), Expr::App(e0, e1) if matches!(e0.as_ref(), Expr::Var(f) if f == "x") && matches!(e1.as_ref(), Expr::Var(x) if x == "x")))) && matches!(e1.as_ref(), Expr::Lamb(x, e_x) if x == "x" && matches!(e_x.as_ref(), Expr::App(e0, e1) if matches!(e0.as_ref(), Expr::Var(f) if f == "f") && matches!(e1.as_ref(), Expr::App(e0, e1) if matches!(e0.as_ref(), Expr::Var(f) if f == "x") && matches!(e1.as_ref(), Expr::Var(x) if x == "x"))))))
-        );
+        assert!(matches!(e, Ok(("", Expr::Lamb(_, _)))));
+
+        let (f, e_f) = match e.unwrap().1 {
+            Expr::Lamb(f, e_f) => (f, e_f),
+            _ => panic!("Expected Expr::Lamb"),
+        };
+        assert_eq!(f, "f");
+
+        let (e0, e1) = match e_f.as_ref() {
+            Expr::App(e0, e1) => (e0, e1),
+            _ => panic!("Expected Expr::App"),
+        };
+
+        let (x, e_x) = match e0.as_ref() {
+            Expr::Lamb(x, e_x) => (x, e_x),
+            _ => panic!("Expected Expr::Lamb"),
+        };
+        assert_eq!(x, "x");
+
+        let (e00, e01) = match e_x.as_ref() {
+            Expr::App(e00, e01) => (e00, e01),
+            _ => panic!("Expected Expr::App"),
+        };
+        assert!(matches!(e00.as_ref(), Expr::Var(f) if f == "f"));
+
+        let (e000, e001) = match e01.as_ref() {
+            Expr::App(e000, e001) => (e000, e001),
+            _ => panic!("Expected Expr::App"),
+        };
+        assert!(matches!(e000.as_ref(), Expr::Var(x) if x == "x"));
+        assert!(matches!(e001.as_ref(), Expr::Var(x) if x == "x"));
+
+        let (x, e_x) = match e1.as_ref() {
+            Expr::Lamb(x, e_x) => (x, e_x),
+            _ => panic!("Expected Expr::Lamb"),
+        };
+        assert_eq!(x, "x");
+
+        let (e00, e01) = match e_x.as_ref() {
+            Expr::App(e00, e01) => (e00, e01),
+            _ => panic!("Expected Expr::App"),
+        };
+        assert!(matches!(e00.as_ref(), Expr::Var(f) if f == "f"));
+
+        let (e000, e001) = match e01.as_ref() {
+            Expr::App(e000, e001) => (e000, e001),
+            _ => panic!("Expected Expr::App"),
+        };
+        assert!(matches!(e000.as_ref(), Expr::Var(x) if x == "x"));
+        assert!(matches!(e001.as_ref(), Expr::Var(x) if x == "x"));
     }
 
     #[test]
@@ -328,18 +443,44 @@ mod tests {
     #[test]
     fn parse_app_is_left_assoc_3() {
         let e = parse_expr("a b c");
-        assert!(matches!(
-            e,
-            Ok(("", Expr::App(e0, e1))) if matches!(e1.as_ref(), Expr::Var(c) if c == "c") && matches!(e0.as_ref(), Expr::App(e00, e01) if matches!(e00.as_ref(), Expr::Var(a) if a == "a") && matches!(e01.as_ref(), Expr::Var(b) if b == "b"))
-        ))
+        assert!(matches!(e, Ok(("", Expr::App(_, _)))));
+
+        let (e0, e1) = match e.unwrap().1 {
+            Expr::App(e0, e1) => (e0, e1),
+            _ => panic!("Expected Expr::App"),
+        };
+        assert!(matches!(e1.as_ref(), Expr::Var(c) if c == "c"));
+
+        let (e00, e01) = match e0.as_ref() {
+            Expr::App(e00, e01) => (e00, e01),
+            _ => panic!("Expected Expr::App"),
+        };
+        assert!(matches!(e00.as_ref(), Expr::Var(a) if a == "a"));
+        assert!(matches!(e01.as_ref(), Expr::Var(b) if b == "b"));
     }
 
     #[test]
     fn parse_app_is_left_assoc_4() {
         let e = parse_expr("a b c d");
-        assert!(matches!(
-            e,
-            Ok(("", Expr::App(e0, e1))) if matches!(e1.as_ref(), Expr::Var(d) if d == "d") && matches!(e0.as_ref(), Expr::App(e00, e01) if matches!(e00.as_ref(), Expr::App(e000, e001) if matches!(e000.as_ref(), Expr::Var(a) if a == "a") && matches!(e001.as_ref(), Expr::Var(b) if b == "b")) && matches!(e01.as_ref(), Expr::Var(c) if c == "c"))
-        ))
+        assert!(matches!(e, Ok(("", Expr::App(_, _)))));
+
+        let (e0, e1) = match e.unwrap().1 {
+            Expr::App(e0, e1) => (e0, e1),
+            _ => panic!("Expected Expr::App"),
+        };
+        assert!(matches!(e1.as_ref(), Expr::Var(d) if d == "d"));
+
+        let (e00, e01) = match e0.as_ref() {
+            Expr::App(e00, e01) => (e00, e01),
+            _ => panic!("Expected Expr::App"),
+        };
+        assert!(matches!(e01.as_ref(), Expr::Var(c) if c == "c"));
+
+        let (e000, e001) = match e00.as_ref() {
+            Expr::App(e000, e001) => (e000, e001),
+            _ => panic!("Expected Expr::App"),
+        };
+        assert!(matches!(e000.as_ref(), Expr::Var(a) if a == "a"));
+        assert!(matches!(e001.as_ref(), Expr::Var(b) if b == "b"));
     }
 }
