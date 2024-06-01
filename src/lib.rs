@@ -46,7 +46,7 @@ pub fn subst(e: Expr, x: &str, e_x: Expr, gen_cnt: u32) -> (Expr, u32) {
     match e {
         // x{e_x/x} = e_x
         Expr::Var(y) if y == x => (e_x, gen_cnt),
-        // y{e_x/x} = e_x where y != x
+        // y{e_x/x} = y where y != x
         Expr::Var(y) => (Expr::Var(y), gen_cnt),
 
         // (\x.e0){e_x/x} = \x.e0
